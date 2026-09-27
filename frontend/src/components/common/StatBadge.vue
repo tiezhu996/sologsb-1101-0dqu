@@ -2,10 +2,13 @@
 import { computed } from 'vue'
 import type { Component } from 'vue'
 import {
+  Calendar,
+  Clock,
   DataLine,
   Files,
   Grid,
   Histogram,
+  OfficeBuilding,
   PieChart,
   TrendCharts,
   WarningFilled
@@ -48,10 +51,13 @@ const toneColor: Record<BadgeTone, string> = {
 }
 
 const iconMap: Record<string, Component> = {
+  Calendar,
+  Clock,
   DataLine,
   Files,
   Grid,
   Histogram,
+  OfficeBuilding,
   PieChart,
   TrendCharts,
   WarningFilled

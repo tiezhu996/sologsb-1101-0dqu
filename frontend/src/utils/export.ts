@@ -6,6 +6,8 @@ import {
   stampBackupTime,
   type BackupPayload
 } from '@/utils/db'
+import type { ScheduleEntry } from '@/types/schedule'
+import { normalizeDateString, offsetDateString } from '@/utils/date'
 
 /** 校验备份对象的必备字段，返回错误信息数组（为空表示通过） */
 export function validateBackup(input: unknown): { ok: boolean; errors: string[]; payload: BackupPayload | null } {
@@ -25,6 +27,10 @@ export function validateBackup(input: unknown): { ok: boolean; errors: string[];
   for (const key of collections) {
     if (!Array.isArray(obj[key])) errors.push(`${key} 字段缺失或不是数组`)
   }
+  // schedules 为 v3 新增：老版本备份没有该字段，按空集合处理，保证老档案照常可读
+  if (obj.schedules !== undefined && !Array.isArray(obj.schedules)) {
+    errors.push('schedules 字段不是数组')
+  }
   if (errors.length > 0) return { ok: false, errors, payload: null }
   const payload: BackupPayload = {
     app: 'gbmuralarch',
@@ -34,19 +40,43 @@ export function validateBackup(input: unknown): { ok: boolean; errors: string[];
     elements: obj.elements ?? [],
     layers: obj.layers ?? [],
     decays: obj.decays ?? [],
-    repairSteps: obj.repairSteps ?? []
+    repairSteps: obj.repairSteps ?? [],
+    schedules: sanitizeSchedules(obj.schedules ?? [])
   }
   return { ok: true, errors, payload }
 }
 
+/** 规整排程记录：过滤结构非法条目，补全时间戳并校验日期格式，避免脏备份写入库中 */
+function sanitizeSchedules(list: ScheduleEntry[]): ScheduleEntry[] {
+  const seenDecay = new Set<string>()
+  const result: ScheduleEntry[] = []
+  list.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return
+    const decayId = typeof item.decayId === 'string' ? item.decayId : ''
+    const plannedStart = normalizeDateString(item.plannedStart)
+    if (!decayId || !plannedStart || seenDecay.has(decayId)) return
+    seenDecay.add(decayId)
+    const now = Date.now()
+    result.push({
+      id: typeof item.id === 'string' && item.id ? item.id : `sched_import_${now}_${index}`,
+      decayId,
+      plannedStart,
+      createdAt: typeof item.createdAt === 'number' ? item.createdAt : now,
+      updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : now
+    })
+  })
+  return result
+}
+
 /** 组装当前本地数据的备份对象 */
 export async function buildBackupPayload(): Promise<BackupPayload> {
-  const [halls, elements, layers, decays, repairSteps] = await Promise.all([
+  const [halls, elements, layers, decays, repairSteps, schedules] = await Promise.all([
     db.halls.toArray(),
     db.elements.toArray(),
     db.layers.toArray(),
     db.decays.toArray(),
-    db.repairSteps.toArray()
+    db.repairSteps.toArray(),
+    db.schedules.toArray()
   ])
   return {
     app: 'gbmuralarch',
@@ -56,7 +86,8 @@ export async function buildBackupPayload(): Promise<BackupPayload> {
     elements,
     layers,
     decays,
-    repairSteps
+    repairSteps,
+    schedules
   }
 }
 
@@ -81,7 +112,8 @@ export async function exportBackupJson(): Promise<{ fileName: string; counts: Re
       elements: payload.elements.length,
       layers: payload.layers.length,
       decays: payload.decays.length,
-      repairSteps: payload.repairSteps.length
+      repairSteps: payload.repairSteps.length,
+      schedules: payload.schedules.length
     }
   }
 }
@@ -104,13 +136,14 @@ export async function importBackup(
   if (overwrite) await clearAllTables()
   await db.transaction(
     'rw',
-    [db.halls, db.elements, db.layers, db.decays, db.repairSteps],
+    [db.halls, db.elements, db.layers, db.decays, db.repairSteps, db.schedules],
     async () => {
       await db.halls.bulkPut(payload.halls)
       await db.elements.bulkPut(payload.elements)
       await db.layers.bulkPut(payload.layers)
       await db.decays.bulkPut(payload.decays)
       await db.repairSteps.bulkPut(payload.repairSteps)
+      await db.schedules.bulkPut(payload.schedules)
     }
   )
   return {
@@ -118,7 +151,8 @@ export async function importBackup(
     elements: payload.elements.length,
     layers: payload.layers.length,
     decays: payload.decays.length,
-    repairSteps: payload.repairSteps.length
+    repairSteps: payload.repairSteps.length,
+    schedules: payload.schedules.length
   }
 }
 
@@ -154,7 +188,12 @@ export function remapIds(payload: BackupPayload): BackupPayload {
     id: createId('step'),
     decayId: decayIdMap.get(step.decayId) ?? step.decayId
   }))
-  return { ...payload, halls, elements, layers, decays, repairSteps }
+  const schedules = payload.schedules.map((entry) => ({
+    ...entry,
+    id: createId('sched'),
+    decayId: decayIdMap.get(entry.decayId) ?? entry.decayId
+  }))
+  return { ...payload, halls, elements, layers, decays, repairSteps, schedules }
 }
 
 /** 生成演示样例数据，便于首次打开即可看到完整链路 */
@@ -167,7 +206,7 @@ export async function seedDemoData(): Promise<void> {
 
   await db.transaction(
     'rw',
-    [db.halls, db.elements, db.layers, db.decays, db.repairSteps],
+    [db.halls, db.elements, db.layers, db.decays, db.repairSteps, db.schedules],
     async () => {
       await db.halls.put({
         id: hallId,
@@ -274,6 +313,13 @@ export async function seedDemoData(): Promise<void> {
           updatedAt: now
         }
       ])
+      await db.schedules.put({
+        id: createId('sched'),
+        decayId: decayIds[0],
+        plannedStart: offsetDateString(7),
+        createdAt: now,
+        updatedAt: now
+      })
     }
   )
 }

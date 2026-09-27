@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Coin, Grid, OfficeBuilding, Tools, WarningFilled } from '@element-plus/icons-vue'
+import { Coin, Calendar, Grid, OfficeBuilding, Tools, WarningFilled } from '@element-plus/icons-vue'
 import { useHallStore } from '@/stores/hallStore'
 import { useRepairStore } from '@/stores/repairStore'
+import { useScheduleStore } from '@/stores/scheduleStore'
 
 const route = useRoute()
 const router = useRouter()
 const hallStore = useHallStore()
 const repairStore = useRepairStore()
+const scheduleStore = useScheduleStore()
 
 const navItems = computed(() => {
   const currentHallId = hallStore.currentHallId
@@ -23,6 +25,7 @@ const navItems = computed(() => {
     },
     { path: '/decays', label: '病害档案台', icon: WarningFilled, badge: String(hallStore.totalUnrepaired) },
     { path: '/repair', label: '修复工序', icon: Tools, badge: String(repairStore.totalSteps) },
+    { path: '/schedule', label: '处置排程', icon: Calendar, badge: String(scheduleStore.totalUnrepaired) },
     { path: '/backup', label: '本地数据', icon: Coin, badge: '' }
   ]
 })
