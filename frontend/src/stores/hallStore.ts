@@ -136,8 +136,9 @@ export const useHallStore = defineStore('hall', () => {
   async function removeLayer(id: string): Promise<void> {
     const layer = layers.value.find((item) => item.id === id)
     const decayIds = decays.value.filter((decay) => decay.layerId === id).map((decay) => decay.id)
-    await db.transaction('rw', [db.layers, db.decays, db.repairSteps], async () => {
+    await db.transaction('rw', [db.layers, db.decays, db.repairSteps, db.schedules], async () => {
       await db.repairSteps.where('decayId').anyOf(decayIds).delete()
+      await db.schedules.where('decayId').anyOf(decayIds).delete()
       await db.decays.bulkDelete(decayIds)
       await db.layers.delete(id)
     })
@@ -150,9 +151,10 @@ export const useHallStore = defineStore('hall', () => {
     const decayIds = decays.value.filter((decay) => layerIds.includes(decay.layerId)).map((decay) => decay.id)
     await db.transaction(
       'rw',
-      [db.elements, db.layers, db.decays, db.repairSteps],
+      [db.elements, db.layers, db.decays, db.repairSteps, db.schedules],
       async () => {
         await db.repairSteps.where('decayId').anyOf(decayIds).delete()
+        await db.schedules.where('decayId').anyOf(decayIds).delete()
         await db.decays.bulkDelete(decayIds)
         await db.layers.bulkDelete(layerIds)
         await db.elements.delete(id)
@@ -194,9 +196,10 @@ export const useHallStore = defineStore('hall', () => {
     const decayIds = decays.value.filter((decay) => layerIds.includes(decay.layerId)).map((decay) => decay.id)
     await db.transaction(
       'rw',
-      [db.halls, db.elements, db.layers, db.decays, db.repairSteps],
+      [db.halls, db.elements, db.layers, db.decays, db.repairSteps, db.schedules],
       async () => {
         await db.repairSteps.where('decayId').anyOf(decayIds).delete()
+        await db.schedules.where('decayId').anyOf(decayIds).delete()
         await db.decays.bulkDelete(decayIds)
         await db.layers.bulkDelete(layerIds)
         await db.elements.bulkDelete(elementIds)

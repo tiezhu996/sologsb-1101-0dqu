@@ -179,8 +179,9 @@ export const useDecayStore = defineStore('decay', () => {
   }
 
   async function removeDecay(id: string): Promise<void> {
-    await db.transaction('rw', [db.decays, db.repairSteps], async () => {
+    await db.transaction('rw', [db.decays, db.repairSteps, db.schedules], async () => {
       await db.repairSteps.where('decayId').equals(id).delete()
+      await db.schedules.delete(id)
       await db.decays.delete(id)
     })
     selectedIds.delete(id)

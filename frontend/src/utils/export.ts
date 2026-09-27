@@ -15,13 +15,9 @@ export function validateBackup(input: unknown): { ok: boolean; errors: string[];
   }
   const obj = input as Partial<BackupPayload>
   if (obj.app !== 'gbmuralarch') errors.push('app 字段应为 gbmuralarch，文件来源不明')
-  const collections: Array<keyof Pick<BackupPayload, 'halls' | 'elements' | 'layers' | 'decays' | 'repairSteps'>> = [
-    'halls',
-    'elements',
-    'layers',
-    'decays',
-    'repairSteps'
-  ]
+  const collections: Array<
+    keyof Pick<BackupPayload, 'halls' | 'elements' | 'layers' | 'decays' | 'repairSteps'>
+  > = ['halls', 'elements', 'layers', 'decays', 'repairSteps']
   for (const key of collections) {
     if (!Array.isArray(obj[key])) errors.push(`${key} 字段缺失或不是数组`)
   }
@@ -34,19 +30,22 @@ export function validateBackup(input: unknown): { ok: boolean; errors: string[];
     elements: obj.elements ?? [],
     layers: obj.layers ?? [],
     decays: obj.decays ?? [],
-    repairSteps: obj.repairSteps ?? []
+    repairSteps: obj.repairSteps ?? [],
+    // v2 及更早档案没有排程表，缺省按空数组处理，老档案照常打开
+    schedules: Array.isArray(obj.schedules) ? obj.schedules : []
   }
   return { ok: true, errors, payload }
 }
 
 /** 组装当前本地数据的备份对象 */
 export async function buildBackupPayload(): Promise<BackupPayload> {
-  const [halls, elements, layers, decays, repairSteps] = await Promise.all([
+  const [halls, elements, layers, decays, repairSteps, schedules] = await Promise.all([
     db.halls.toArray(),
     db.elements.toArray(),
     db.layers.toArray(),
     db.decays.toArray(),
-    db.repairSteps.toArray()
+    db.repairSteps.toArray(),
+    db.schedules.toArray()
   ])
   return {
     app: 'gbmuralarch',
@@ -56,7 +55,8 @@ export async function buildBackupPayload(): Promise<BackupPayload> {
     elements,
     layers,
     decays,
-    repairSteps
+    repairSteps,
+    schedules
   }
 }
 
@@ -81,7 +81,8 @@ export async function exportBackupJson(): Promise<{ fileName: string; counts: Re
       elements: payload.elements.length,
       layers: payload.layers.length,
       decays: payload.decays.length,
-      repairSteps: payload.repairSteps.length
+      repairSteps: payload.repairSteps.length,
+      schedules: payload.schedules.length
     }
   }
 }
@@ -104,13 +105,14 @@ export async function importBackup(
   if (overwrite) await clearAllTables()
   await db.transaction(
     'rw',
-    [db.halls, db.elements, db.layers, db.decays, db.repairSteps],
+    [db.halls, db.elements, db.layers, db.decays, db.repairSteps, db.schedules],
     async () => {
       await db.halls.bulkPut(payload.halls)
       await db.elements.bulkPut(payload.elements)
       await db.layers.bulkPut(payload.layers)
       await db.decays.bulkPut(payload.decays)
       await db.repairSteps.bulkPut(payload.repairSteps)
+      await db.schedules.bulkPut(payload.schedules)
     }
   )
   return {
@@ -118,7 +120,8 @@ export async function importBackup(
     elements: payload.elements.length,
     layers: payload.layers.length,
     decays: payload.decays.length,
-    repairSteps: payload.repairSteps.length
+    repairSteps: payload.repairSteps.length,
+    schedules: payload.schedules.length
   }
 }
 
@@ -154,7 +157,15 @@ export function remapIds(payload: BackupPayload): BackupPayload {
     id: createId('step'),
     decayId: decayIdMap.get(step.decayId) ?? step.decayId
   }))
-  return { ...payload, halls, elements, layers, decays, repairSteps }
+  const schedules = payload.schedules.map((schedule) => {
+    const nextDecayId = decayIdMap.get(schedule.decayId) ?? schedule.decayId
+    return {
+      ...schedule,
+      id: nextDecayId,
+      decayId: nextDecayId
+    }
+  })
+  return { ...payload, halls, elements, layers, decays, repairSteps, schedules }
 }
 
 /** 生成演示样例数据，便于首次打开即可看到完整链路 */
@@ -167,7 +178,7 @@ export async function seedDemoData(): Promise<void> {
 
   await db.transaction(
     'rw',
-    [db.halls, db.elements, db.layers, db.decays, db.repairSteps],
+    [db.halls, db.elements, db.layers, db.decays, db.repairSteps, db.schedules],
     async () => {
       await db.halls.put({
         id: hallId,
@@ -274,6 +285,18 @@ export async function seedDemoData(): Promise<void> {
           updatedAt: now
         }
       ])
+      // 为最严重的那条未修复病害预排一条开工日期
+      const planned = new Date(now + 3 * 24 * 60 * 60 * 1000)
+      const plannedStart = `${planned.getFullYear()}-${String(planned.getMonth() + 1).padStart(2, '0')}-${String(
+        planned.getDate()
+      ).padStart(2, '0')}`
+      await db.schedules.put({
+        id: decayIds[0],
+        decayId: decayIds[0],
+        plannedStart,
+        createdAt: now,
+        updatedAt: now
+      })
     }
   )
 }

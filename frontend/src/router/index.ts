@@ -24,6 +24,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '病害档案台', icon: 'WarningFilled' }
   },
   {
+    path: '/schedules',
+    name: 'schedule-board',
+    component: () => import('@/pages/ScheduleBoard.vue'),
+    meta: { title: '处置排程', icon: 'Calendar' }
+  },
+  {
     path: '/repair',
     name: 'repair-plan',
     component: () => import('@/pages/RepairPlan.vue'),
